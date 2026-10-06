@@ -1,0 +1,39 @@
+# VCS / Verdi generated files
+csrc/
+AN.DB/
+lint.log
+DVEFiles/
+simv
+simv.daidir/
+*.daidir/
+*.vpd
+ucli.key
+novas.fsdb
+novas.conf
+novas.rc
+novas.log
+novas_dump.log
+verdi_config_file
+verdiLog/
+compile*.log
+
+# Design Compiler generated files
+WORK/
+*.syn
+*.pvl
+*.mr
+*.svf
+command.log
+default.svf
+alib-*
+*.rep
+
+# Misc
+*.log
+*.txt
+*.h
+
+# macOS junk (partner zips)
+__MACOSX/
+.DS_Store
+._*
