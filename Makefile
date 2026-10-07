@@ -1,0 +1,48 @@
+# ADDV Lab 2 — MIPS processor
+#
+# Requires the tool environment first:
+#     bash:   source setup.sh
+#     tcsh:   source env.cshrc
+#
+# Usage:
+#     make sim-ref             # compile + simulate the provided single-cycle design
+#     make sim-part1           # compile + simulate the Part 1 pipelined design
+#     make compile-part1-verdi # Part 1 compile with Verdi database (-kdb)
+#     make waves-part1         # open Verdi on the Part 1 FSDB
+#     make clean               # remove build artifacts
+
+SHELL := /bin/bash
+.SHELLFLAGS := -o pipefail -c
+
+VCS        ?= $(VCS_HOME)/bin/vcs
+VERDI      ?= $(VERDI_HOME)/bin/verdi
+VCSFLAGS   ?= -full64 -debug_access+all
+VERDIFLAGS ?= -dbdir ./simv.daidir -ssf novas.fsdb -nologo
+
+# Non-pipelined reference (in reference/)
+REF_SRCS = top.v controller.v datapath.v testbench.v
+
+# Part 1 design (update these to .sv files after the SystemVerilog conversion)
+P1_SRCS = rtl/top.v rtl/controller.v rtl/datapath.v tb/testbench.v
+
+.PHONY: all sim-ref sim-part1 compile-part1-verdi waves-part1 clean
+
+all: sim-ref
+
+sim-ref:
+	cd reference && $(VCS) $(VCSFLAGS) $(REF_SRCS) 2>&1 | tee compile.log
+	cd reference && ./simv | tee run.log
+
+sim-part1:
+	cd part1 && $(VCS) $(VCSFLAGS) $(P1_SRCS) 2>&1 | tee compile.log
+	cd part1 && ./simv | tee run.log
+
+compile-part1-verdi:
+	cd part1 && $(VCS) $(VCSFLAGS) -kdb -lca $(P1_SRCS) 2>&1 | tee compile_verdi.log
+
+waves-part1:
+	cd part1 && $(VERDI) $(VERDIFLAGS)
+
+clean:
+	cd reference && rm -rf csrc simv simv.daidir ucli.key novas.* verdiLog *.log
+	cd part1 && rm -rf csrc simv simv.daidir ucli.key novas.* verdiLog *.log
