@@ -158,46 +158,67 @@ flushing and stalling must handle.
 
 ## Part 1 — TODO checklist
 
-**Understand + baseline**
-- [ ] Read the provided code and the book chapter; run `make sim-ref`.
-- [ ] Save the baseline simulation log and synthesis QoR (area/frequency) for
-      the performance table.
+Work in small steps and keep `make sim-part1` passing after each one; commit at
+every checkpoint. Do **not** mix syntax churn (Step 1) with architecture changes
+(Step 2) — that makes debugging much harder.
 
-**Convert to a 5-stage pipeline** (do not change the top-level interface)
+**Step 0 — Understand + baseline**
+- [ ] Read the provided code and the book chapter; run `make sim-ref` (expect two
+      `Memory write ... successful` lines and `TEST COMPLETE`).
+- [ ] Save the baseline simulation log; keep the non-pipelined design for the
+      performance table later.
+- [ ] Create a working branch: `git checkout -b part1-pipeline`.
+
+**Step 1 — SystemVerilog conversion (no pipelining yet)**
+- [ ] Convert `part1/rtl/*.v` → `*.sv` in place: `logic` instead of `reg`/`wire`,
+      `always_comb` for decoders/ALU/muxes, `always_ff` for `regfile`/`flopr`,
+      `unique case` in the decoders.
+- [ ] Declare the currently implicit wires in `mips` (`zero`, `pcsrc`) as `logic`.
+- [ ] Update the Makefile: `P1_SRCS` → the `.sv` files and add `-sverilog` to
+      `VCSFLAGS`.
+- [ ] Acceptance: `make sim-part1` matches the baseline exactly; commit.
+      **No pipeline registers in this step.**
+
+**Step 2 — 5-stage pipeline skeleton (behaviour may be wrong until Step 3)**
 - [ ] Keep the hierarchy exactly: `testbench → top → mips → {controller, datapath} → imem, dmem`.
 - [ ] Structure `datapath` in this order: fetch logic → IF/ID registers →
       decode + register file → ID/EX registers → execute (ALU) → EX/MEM
       registers → memory logic → MEM/WB registers → writeback logic.
-- [ ] Add pipeline registers so each stage does one piece of work.
+- [ ] Add pipeline registers, e.g.: IF/ID (`pcplus4`, `instr`); ID/EX (all
+      control bits, `pcplus4`, `rd1`, `rd2`, `signimm`, `rs/rt/rd`); EX/MEM
+      (`regwrite/memtoreg/memwrite`, `aluout`, `writedata`, `writereg`); MEM/WB
+      (`regwrite/memtoreg`, `readdata`, `aluout`, `writereg`).
+- [ ] Commit (the simulation is expected to be wrong at this point).
 
-**SystemVerilog conversion**
-- [ ] Use `always_ff` / `always_comb`, `logic` instead of `reg`/`wire`,
-      `unique case` where appropriate, etc. (`analyze -sverilog` for synthesis).
-
-**Hazards**
+**Step 3 — Hazard handling**
 - [ ] Data hazards: implement forwarding for `ADD` (paths from EX/MEM and
-      MEM/WB outputs back to the ALU inputs; EX/MEM has priority).
-- [ ] Control hazards: flush the pipeline on a taken `BEQ` (clear IF/ID and
-      ID/EX, redirect PC).
-- [ ] Any other hazard (e.g. load-use) may simply stall the pipeline.
+      MEM/WB outputs back to the ALU inputs; EX/MEM has priority when both match).
+- [ ] Control hazards: flush IF/ID and ID/EX on a taken `BEQ` and redirect the
+      PC to the EX-computed target (`j` needs the same treatment — the provided
+      program uses it).
+- [ ] Any other hazard (e.g. load-use) may simply stall the pipeline for one cycle.
+- [ ] Acceptance: the baseline program passes again; commit.
 
-**Simulation and verification**
+**Step 4 — Simulation and verification**
 - [ ] Put machine code for all supported instructions into `part1/mem/memfile.dat`
       and update `expected_data`/`expected_addr` in the testbench; verify.
 - [ ] Add a forwarding test program (back-to-back `ADD`s with data hazards);
       verify forwarding works.
 - [ ] Add a flushing test program (a chain of `BEQ`s); verify flushing works.
 
-**Synthesis**
-- [ ] Synthesize the non-pipelined reference (`reference/`) and the pipelined
-      design (`part1/`); read the timing reports (critical path, clock period).
-- [ ] SRAM experiment: swap in `top_with_sram`, synthesize with
-      `compile_with_sram.tcl`, and note the lines in that script that add the
-      memory-cell library (`SRAM_32x64_1rw.db`).
+**Step 5 — Synthesis**
+- [ ] Write `part1/synth/compile_dc.tcl` (`gscl45nm`, `analyze -sverilog`,
+      reports); synthesize the non-pipelined reference (`reference/`) and the
+      pipelined design (`part1/`); read the timing reports (critical path,
+      clock period).
+- [ ] SRAM experiment: copy `compile_with_sram.tcl` from
+      `/usr/local2/COURSES/ADDV/LAB2/` on Apporto (it is not in the starter zip),
+      swap in `top_with_sram`, synthesize, and note the lines in that script that
+      add the memory-cell library (`SRAM_32x64_1rw.db`).
 - [ ] Add `set_dont_touch [get_cells "imem"]` / `set_dont_touch [get_cells "dmem"]`
       so the memories are not optimized away.
 
-**Report + submission**
+**Step 6 — Report + submission**
 - [ ] Microarchitecture diagram of the pipeline with the **critical path
       highlighted**.
 - [ ] List the signals that flow through each stage for a `lw`.
