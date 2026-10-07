@@ -16,14 +16,14 @@ SHELL := /bin/bash
 
 VCS        ?= $(VCS_HOME)/bin/vcs
 VERDI      ?= $(VERDI_HOME)/bin/verdi
-VCSFLAGS   ?= -full64 -debug_access+all
+VCSFLAGS   ?= -full64 -sverilog -debug_access+all
 VERDIFLAGS ?= -dbdir ./simv.daidir -ssf novas.fsdb -nologo
 
 # Non-pipelined reference (in reference/)
 REF_SRCS = top.v controller.v datapath.v testbench.v
 
 # Part 1 design (update these to .sv files after the SystemVerilog conversion)
-P1_SRCS = rtl/top.v rtl/controller.v rtl/datapath.v tb/testbench.v
+P1_SRCS = rtl/top.sv rtl/controller.sv rtl/datapath.sv tb/testbench.v
 
 .PHONY: all sim-ref sim-part1 compile-part1-verdi waves-part1 clean
 

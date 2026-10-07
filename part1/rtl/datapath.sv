@@ -1,23 +1,8 @@
-//////////////////////////////////////////////////////////////////////
-// ===================================================================
-// This file has the following module implementations:
-// 1. datapath
-// 2. regfile
-// 3. alu
-// 4. adder
-// 5. mux2
-// 6. sl2
-// 7. signext
-// 8. flopr
-// ===================================================================
-//////////////////////////////////////////////////////////////////////
-// Datapath module
-//////////////////////////////////////////////////////////////////////
-module datapath (
+module datapath(
     input clk, reset,
-    input memtoreg, pcsrc,
+    input mem2reg, pcsrc,
     input alusrc, regdst,
-    input regwrite, jump,
+    input regwrite, jump, 
     input [2:0] alucontrol,
     output zero,
     output [31:0] pc,
@@ -26,12 +11,12 @@ module datapath (
     input [31:0] readdata
 );
 
-    wire [4:0] writereg;
-    wire [31:0] pcnext, pcnextbr, pcplus4, pcbranch;
-    wire [31:0] signimm, signimmsh;
-    wire [31:0] srca, srcb;
-    wire [31:0] result;
-    
+    logic [4:0] write2reg;
+    logic [31:0] pcnext, pcnextbr, pcplus4, pcbranch;
+    logic [31:0] signimm, signimmsh;
+    logic [31:0] srca, srcb;
+    logic [31:0] result;
+
     // next PC logic
     flopr #(32) pcreg(clk, reset, pcnext, pc);
     adder pcadd1 (pc, 32'b100, pcplus4);
@@ -41,75 +26,67 @@ module datapath (
     mux2 #(32) pcmux(pcnextbr, {pcplus4[31:28], instr[25:0], 2'b00}, jump, pcnext);
 
     // register file logic
-    regfile rf(clk, regwrite, instr[25:21], instr[20:16], writereg, result, srca, writedata);
-    mux2 #(5) wrmux(instr[20:16], instr[15:11], regdst, writereg);
-    mux2 #(32) resmux(aluout, readdata, memtoreg, result);
+    regfile rf(clk, regwrite, instr[25:21], instr[20:16], write2reg, result, srca, writedata);
+    mux2 #(5) wrmux(instr[20:16], instr[15:11], regdst, write2reg);
+    mux2 #(32) resmux(aluout, readdata, mem2reg, result);
     signext se(instr[15:0], signimm);
     
     // ALU logic
     mux2 #(32) srcbmux(writedata, signimm, alusrc, srcb);
     alu alu(srca, srcb, alucontrol, aluout, zero);
+
 endmodule
 
+module regfile(
 
-//////////////////////////////////////////////////////////////////////
-// Register File Module
-//////////////////////////////////////////////////////////////////////
-module regfile (
     input clk,
     input we3,
     input [4:0] ra1, ra2, wa3,
     input [31:0] wd3,
     output [31:0] rd1, rd2
+
 );
-    
+
     reg [31:0] rf[31:0];
-    // three ported register file
-    // read two ports combinationally
-    // write third port on rising edge of clock
-    // register 0 hardwired to 0
-    always @ (posedge clk)
+
+    always_ff @(posedge clk) begin
         if (we3) rf[wa3] <= wd3;
+    end
 
     assign rd1 = (ra1 != 0) ? rf[ra1] : 0;
     assign rd2 = (ra2 != 0) ? rf[ra2] : 0;
 endmodule
 
-//////////////////////////////////////////////////////////////////////
-// ALU Module
-////////////////////////////////////////////////////////////////////// 
-module alu(
-    input [31:0] a,          // First operand
-    input [31:0] b,          // Second operand
-    input [2:0] control,     // ALU control signal
-    output reg [31:0] result, // ALU result
-    output zero              // Zero flag
-);
 
-    // Define ALU operations based on control signal
+module alu(
+    input [31:0] a,
+    input [31:0] b,
+    input [2:0] control,
+    output logic [31:0] result,
+    output zero
+);
+    // define LAU ops
     localparam ALU_AND = 3'b000;
     localparam ALU_OR  = 3'b001;
     localparam ALU_ADD = 3'b010;
     localparam ALU_SUB = 3'b110;
     localparam ALU_SLT = 3'b111;
-    
-    // Calculate result based on control input
-    always @(*) begin
+
+    always_comb begin
         case(control)
-            ALU_AND: result = a & b;                     // AND
-            ALU_OR:  result = a | b;                     // OR
-            ALU_ADD: result = a + b;                     // ADD
-            ALU_SUB: result = a - b;                     // SUB
-            ALU_SLT: result = ($signed(a) < $signed(b)); // Set Less Than (signed)
-            default: result = 32'bx;                     // Undefined operation
+            ALU_AND: result = a & b;
+            ALU_OR:  result = a | b;
+            ALU_ADD: result = a + b;
+            ALU_SUB: result = a - b;
+            ALU_SLT: result = ($signed(a) < $signed(b)); // signed less than
+            default: result = 32'bx; // undefined operation
         endcase
     end
-    
-    // Set zero flag when result is 0
-    assign zero = (result == 32'b0);
-    
-endmodule
 
+
+    assign zero = (result == 32'b0);
+
+endmodule
 
 //////////////////////////////////////////////////////////////////////
 // Adder Module
@@ -132,7 +109,6 @@ module mux2 # (parameter WIDTH = 8) (
 );
     assign y = s ? d1 : d0;
 endmodule
-
 
 //////////////////////////////////////////////////////////////////////
 // Shift Left by 2 Module
@@ -157,15 +133,13 @@ module signext (
 endmodule
 
 
-//////////////////////////////////////////////////////////////////////
-// Flop Register Module
-//////////////////////////////////////////////////////////////////////
+// flop register module
 module flopr # (parameter WIDTH = 8)(
     input clk, reset,
     input [WIDTH-1:0] d,
     output reg [WIDTH-1:0] q
 );
-    always @ (posedge clk, posedge reset)
+    always_ff @ (posedge clk, posedge reset)
         if (reset) q <= 0;
         else q <= d;
 endmodule
