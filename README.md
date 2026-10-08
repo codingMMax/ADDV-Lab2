@@ -180,6 +180,13 @@ every checkpoint. Do **not** mix syntax churn (Step 1) with architecture changes
       **No pipeline registers in this step.**
 
 **Step 2 — 5-stage pipeline skeleton (behaviour may be wrong until Step 3)**
+
+> Full walkthrough: [`docs/pipeline-guide.md`](docs/pipeline-guide.md) — logical
+> vs physical stages, exact pipeline-register contents, hazard taxonomy, and
+> forwarding/stall/flush code.
+> Code-level walkthrough: [`docs/pipeline-implementation.md`](docs/pipeline-implementation.md) —
+> full Step 2 code, checkpoint order, Step 3 hookup, common compile errors.
+
 - [ ] Keep the hierarchy exactly: `testbench → top → mips → {controller, datapath} → imem, dmem`.
 - [ ] Structure `datapath` in this order: fetch logic → IF/ID registers →
       decode + register file → ID/EX registers → execute (ALU) → EX/MEM
