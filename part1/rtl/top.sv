@@ -74,7 +74,13 @@ module imem(
     logic [31:0] RAM[63:0];
 
     initial begin
+`ifdef FWD_TEST
+        $readmemh("mem/forwarding_test.dat", RAM);
+`elsif FLUSH_TEST
+        $readmemh("mem/flushing_test.dat", RAM);
+`else
         $readmemh("mem/memfile.dat", RAM);
+`endif
     end
 
     assign readdata = RAM[addr];

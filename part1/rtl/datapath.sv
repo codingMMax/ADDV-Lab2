@@ -55,6 +55,8 @@ module datapath(
     logic [31:0] resultW;
     // harzard control
     logic   StallF, StallD, FlushD, FlushE;
+    // valid chain (measurement only): pulses high in WB once per retired instruction
+    logic   validF, validD, validE, validM, validW;
 
 
     // =====================================================================
@@ -146,7 +148,16 @@ module datapath(
     // 9. WRITEBACK (WB) — result_w mux drives the regfile write port (section 3)
     // =====================================================================
     assign resultW = mem2regW ? readdataW : aluoutW;
-    
+
+    // =====================================================================
+    // Valid chain (measurement only) — one pulse in WB per retired instruction
+    // =====================================================================
+    assign validF = 1'b1;
+    pipe_reg #(1) if_id_valid  (clk, reset, ~StallD, FlushD, validF, validD);
+    pipe_reg #(1) id_ex_valid  (clk, reset, 1'b1,    FlushE, validD, validE);
+    pipe_reg #(1) ex_mem_valid (clk, reset, 1'b1,    1'b0,   validE, validM);
+    pipe_reg #(1) mem_wb_valid (clk, reset, 1'b1,    1'b0,   validM, validW);
+
     //harzard logic
     logic [1:0] forwardAE;
     logic [1:0] forwardBE;

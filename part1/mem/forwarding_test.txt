@@ -1,0 +1,16 @@
+# forwarding_test.txt — ADD chain with back-to-back data hazards (Part 1, forwarding test)
+# Expected stores: 0x40=3, 0x44=4, 0x48=7, 0x4c=11, 0x50=18
+# Machine code (word index -> hex) is in forwarding_test.dat
+
+addi $1, $0, 1        # w0  $1 = 1
+addi $2, $0, 2        # w1  $2 = 2
+add  $3, $1, $2       # w2  $3 = 3   (RAW on $1,$2 - distance 1)
+add  $4, $3, $1       # w3  $4 = 4   (RAW on $3 - distance 1)
+add  $5, $4, $3       # w4  $5 = 7   (RAW on $4,$3 - distance 1)
+add  $6, $5, $4       # w5  $6 = 11  (RAW on $5,$4 - distance 1)
+add  $7, $6, $5       # w6  $7 = 18  (RAW on $6,$5 - distance 1)
+sw   $3, 0x40($0)     # w7  store 3
+sw   $4, 0x44($0)     # w8  store 4
+sw   $5, 0x48($0)     # w9  store 7
+sw   $6, 0x4c($0)     # w10 store 11
+sw   $7, 0x50($0)     # w11 store 18

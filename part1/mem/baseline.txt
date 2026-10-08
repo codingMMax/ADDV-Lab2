@@ -1,0 +1,21 @@
+# baseline.txt — provided test program (memfile.dat), Harris & Harris MIPS test
+# Expected stores: 0x50=7, 0x54=7
+
+addi $2, $0, 5        # w0
+addi $3, $0, 12       # w1
+addi $7, $3, -9       # w2  $7 = 3
+or   $4, $7, $2       # w3  $4 = 7
+and  $5, $3, $4       # w4  $5 = 4
+add  $5, $5, $4       # w5  $5 = 11
+beq  $5, $7, +10      # w6  not taken (11 != 3)
+slt  $4, $3, $4       # w7  $4 = 0
+beq  $4, $0, +1       # w8  taken -> w10 (flush w9)
+addi $5, $0, 0        # w9  skipped
+slt  $4, $7, $2       # w10 $4 = 1
+add  $7, $4, $5       # w11 $7 = 1 + 11 = 12
+sub  $7, $7, $2       # w12 $7 = 12 - 5 = 7
+sw   $7, 0x44($3)     # w13 store at 0x44+12 = 0x50
+lw   $2, 0x50($0)     # w14 $2 = 7 (load back)
+j    0x11             # w15 jump -> w17 (flush w16)
+addi $2, $0, 1        # w16 skipped
+sw   $2, 0x54($0)     # w17 store 7

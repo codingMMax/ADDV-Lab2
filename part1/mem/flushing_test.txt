@@ -1,0 +1,18 @@
+# flushing_test.txt — BEQ taken/not-taken chain (Part 1, control-hazard flushing test)
+# Expected stores: 0x4c=4, 0x50=6
+# Wrong-path stores at 0x40/0x44/0x48 must NOT happen if flushing works.
+# Machine code (word index -> hex) is in flushing_test.dat
+
+addi $1, $0, 1        # w0  $1 = 1
+addi $2, $0, 2        # w1  $2 = 2
+beq  $1, $1, +2       # w2  taken -> w5 (flush w3,w4)
+sw   $2, 0x40($0)     # w3  wrong path marker
+sw   $2, 0x44($0)     # w4  wrong path marker
+addi $4, $0, 4        # w5  $4 = 4
+beq  $1, $2, +2       # w6  NOT taken (1 != 2) -> w7
+addi $5, $0, 5        # w7  $5 = 5
+beq  $5, $5, +1       # w8  taken -> w10 (flush w9)
+sw   $2, 0x48($0)     # w9  wrong path marker
+addi $6, $0, 6        # w10 $6 = 6
+sw   $4, 0x4c($0)     # w11 store 4
+sw   $6, 0x50($0)     # w12 store 6

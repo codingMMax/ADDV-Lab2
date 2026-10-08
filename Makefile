@@ -25,7 +25,7 @@ REF_SRCS = top.v controller.v datapath.v testbench.v
 # Part 1 design (update these to .sv files after the SystemVerilog conversion)
 P1_SRCS = rtl/top.sv rtl/controller.sv rtl/datapath.sv tb/testbench.v
 
-.PHONY: all sim-ref sim-part1 compile-part1-verdi waves-part1 clean
+.PHONY: all sim-ref sim-part1 sim-fwd sim-flush compile-part1-verdi waves-part1 clean
 
 all: sim-ref
 
@@ -35,6 +35,15 @@ sim-ref:
 
 sim-part1:
 	cd part1 && $(VCS) $(VCSFLAGS) $(P1_SRCS) 2>&1 | tee compile.log
+	cd part1 && ./simv | tee run.log
+
+# Hazard test programs (see part1/mem/*.txt for the assembly listings)
+sim-fwd:
+	cd part1 && $(VCS) $(VCSFLAGS) +define+FWD_TEST $(P1_SRCS) 2>&1 | tee compile.log
+	cd part1 && ./simv | tee run.log
+
+sim-flush:
+	cd part1 && $(VCS) $(VCSFLAGS) +define+FLUSH_TEST $(P1_SRCS) 2>&1 | tee compile.log
 	cd part1 && ./simv | tee run.log
 
 compile-part1-verdi:
