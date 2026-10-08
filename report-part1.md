@@ -25,7 +25,7 @@
   │ PC, imem  │──►│ IF/ID     │────►│ ID/EX             │──►│ EX/MEM   │──►│ MEM/WB    │──► regfile
   │ pc+4      │   │ pcplus4D  │     │ controls, rd1E,   │   │ aluoutM, │   │ readdataW │    write
   └───────────┘   │ instrD    │     │ rd2E, signimmE,   │   │ writedata│   │ aluoutW   │
-        ▲         └───────────┘     │ rsE, rtE, ...     │   │ writeregM│   │ writeregW │
+        ▲         └───────────┘     │ rsE, rtE, ...     │   │ destM    │   │ destW     │
         │               │           └───────────────────┘   └──────────┘   └───────────┘
         │               ▼                   ▲   dmem            ▲
         │        controller (in mips)       │                   │
@@ -56,15 +56,15 @@ is ≈ **1.16 ns** (slack −0.16) → **~862 MHz**.
 
 | Stage | Work | Signals (this design) |
 |---|---|---|
-| **IF** | fetch; PC+4 | `pc`, `instrF`, `pcplus4F` |
+| **IF** | fetch; PC+4 | `pcF`, `instrF`, `pcplus4F` |
 | **IF/ID** | register | `pcplus4D`, `instrD` |
-| **ID** | decode (`controller` from `instrD`), regfile read, sign-extend, write-register mux | `rd1D` (`rs` value), `signimmD`, `writeregD` (=`rt`), controls: `mem2reg=1`, `regwrite=1`, `alusrc=1`, `alucontrol=add` |
-| **ID/EX** | register | `mem2regE`, `regwriteE`, `alusrcE`, `alucontrolE`, `rd1E`, `signimmE`, `writeregE`, `pcplus4E`, `rsE`, `rtE` |
+| **ID** | decode (`controller` from `instrD`), regfile read, sign-extend, write-register mux | `rd1D` (`rs` value), `signimmD`, `destD` (=`rt`), controls: `mem2regD=1`, `regwriteD=1`, `alusrcD=1`, `alucontrolD=add` |
+| **ID/EX** | register | `mem2regE`, `regwriteE`, `alusrcE`, `alucontrolE`, `rd1E`, `signimmE`, `destE`, `pcplus4E`, `rsE`, `rtE` |
 | **EX** | address = `rs + imm` | `aluoutE` (address) |
-| **EX/MEM** | register | `aluoutM` (address), `mem2regM`, `regwriteM`, `writeregM` (store data unused) |
-| **MEM** | data memory read (`dmem` in `top`) | `readdata` |
-| **MEM/WB** | register | `readdataW`, `aluoutW`, `mem2regW`, `regwriteW`, `writeregW` |
-| **WB** | select load data; write regfile | `resultW = readdataW` → `rf[writeregW]` |
+| **EX/MEM** | register | `aluoutM` (address), `mem2regM`, `regwriteM`, `destM` (store data unused) |
+| **MEM** | data memory read (`dmem` in `top`) | `readdataM` |
+| **MEM/WB** | register | `readdataW`, `aluoutW`, `mem2regW`, `regwriteW`, `destW` |
+| **WB** | select load data; write regfile | `resultW = readdataW` → `rf[destW]` |
 
 ---
 
@@ -89,13 +89,13 @@ is ≈ **1.16 ns** (slack −0.16) → **~862 MHz**.
    stall, `flush` for bubbles) implements IF/ID, ID/EX, EX/MEM, MEM/WB:
    ```systemverilog
    pipe_reg #(32) if_id_instr (clk, reset, ~StallD, FlushD, instrF, instrD);
-   pipe_reg #(1)  id_ex_branch(clk, reset, 1'b1,   FlushE, branch, branchE);
+   pipe_reg #(1)  id_ex_branch(clk, reset, 1'b1,   FlushE, branchD, branchE);
    ```
 5. **PC-next logic moved into IF**, selecting between `pcplus4F`, the EX branch
-   target `pcbranchE`, and the ID jump target `pctargetD`. Branch has priority
+   target `pcbranchE`, and the ID jump target `pcjumpD`. Branch has priority
    over jump (a wrong-path jump in ID must not override a taken branch in EX):
    ```systemverilog
-   assign pcnextF = pcsrcE ? pcbranchE : (jump ? pctargetD : pcplus4F);
+   assign pcnextF = pcsrcE ? pcbranchE : (jumpD ? pcjumpD : pcplus4F);
    ```
 6. **The datapath file is organized in the lab-required order** (fetch → IF/ID →
    decode/RF → ID/EX → execute → EX/MEM → memory → MEM/WB → writeback), and the
@@ -117,14 +117,14 @@ Both ALU inputs get forwarding muxes; EX/MEM has priority (it is the newer
 value). Implemented in the EX section:
 
 ```systemverilog
-if (regwriteM && writeregM != 0 && writeregM == rsE) forwardAE = 2'b10;
-else if (regwriteW && writeregW != 0 && writeregW == rsE) forwardAE = 2'b01;
+if (regwriteM && destM != 0 && destM == rsE) fwdAE = 2'b10;
+else if (regwriteW && destW != 0 && destW == rsE) fwdAE = 2'b01;
 ...
-assign srcAE = (forwardAE == 2'b10) ? aluoutM :
-               (forwardAE == 2'b01) ? resultW  : rd1E;
+assign aluSrcAE = (fwdAE == 2'b10) ? aluoutM :
+                  (fwdAE == 2'b01) ? resultW : rd1E;
 ```
 
-`writereg != 0` is checked because `$0` is hardwired; without it a stale `$0`
+`dest != 0` is checked because `$0` is hardwired; without it a stale `$0`
 value could be injected.
 
 ### 4.2 Store-data forwarding (required for the baseline program)
@@ -136,9 +136,9 @@ The store data that reaches `dmem` is the forwarded operand **before** the
 `alusrc` mux:
 
 ```systemverilog
-assign srcBE_raw = (forwardBE == 2'b10) ? aluoutM : ... : rd2E;
-mux2 #(32) srcbmux(srcBE_raw, signimmE, alusrcE, srcBE);  // ALU input
-assign writedataE = srcBE_raw;                            // store data
+assign rtFwdE     = (fwdBE == 2'b10) ? aluoutM : ... : rd2E;
+mux2 #(32) srcbmux(rtFwdE, signimmE, alusrcE, aluSrcBE);  // ALU input
+assign storeDataE = rtFwdE;                               // store data
 ```
 
 Without this, `sub $7` → `sw $7` stores the old `$7` and the baseline test
@@ -167,9 +167,9 @@ reaches EX the producer has already left MEM/WB, so ALU forwarding cannot help.
 > instruction in ID — hold the front-end for one cycle and insert a bubble."
 
 ```systemverilog
-assign load_use = mem2regE && (writeregE != 0) &&
-                  ((writeregE == instrD[25:21]) || (writeregE == instrD[20:16]));
-assign StallF = load_use;  assign StallD = load_use;  assign FlushE = load_use;
+assign loadUseE = mem2regE && (destE != 0) &&
+                  ((destE == instrD[25:21]) || (destE == instrD[20:16]));
+assign StallF = loadUseE;  assign StallD = loadUseE;  assign FlushE = loadUseE;
 ```
 
 The load's data does not exist until the end of MEM, so the consumer is held in
@@ -184,11 +184,11 @@ ID until the value can be forwarded from MEM/WB.
   taken branch we clear IF/ID and ID/EX and set `PC ← pcbranchE`; penalty
   2 cycles.
   ```systemverilog
-  assign FlushD = pcsrcE | jump;
-  assign FlushE = pcsrcE | load_use;
+  assign FlushD = pcsrcE | jumpD;
+  assign FlushE = pcsrcE | loadUseE;
   ```
 - **J (resolved in ID):** one younger instruction (IF). Clear IF/ID and set
-  `PC ← pctargetD`; penalty 1 cycle.
+  `PC ← pcjumpD`; penalty 1 cycle.
 - **Priority:** if a taken branch (EX) and a jump (ID) coincide, the jump is on
   the wrong path and must not win — the PC mux checks `pcsrcE` first.
 
@@ -237,7 +237,7 @@ PERF: cycles=15 instructions=12 CPI=1.250000 IPC=0.800000
 **Figure 4 — ADD forwarding (annotated).**
 
 <!-- TODO: waveform showing an add consuming the EX/MEM result via the
-     forwarding muxes; annotate forwardAE/forwardBE. -->
+     forwarding muxes; annotate fwdAE/fwdBE. -->
 ![ADD forwarding](figures/part1_wave_add_fwd.png)
 
 ### 5.4 Flushing test — BEQ taken/not-taken

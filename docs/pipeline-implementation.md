@@ -203,23 +203,27 @@ endmodule
 
 `regdst` is consumed in ID (by `wrmux`), so it does not need to be pipelined.
 
-**Gotcha — regfile write timing (required for the baseline program).** Change
-the `regfile` helper to write on the **negedge**:
+**Gotcha — regfile read timing (required for the baseline program).** Keep the
+posedge write, but add a **write-through bypass** on both read ports:
 
 ```systemverilog
-always_ff @(negedge clk) begin
+always_ff @(posedge clk) begin
     if (we3) rf[wa3] <= wd3;
 end
+// a same-cycle WB -> ID read returns the incoming write data
+assign rd1 = (ra1 != 0) ? ((we3 && wa3 == ra1) ? wd3 : rf[ra1]) : 0;
+assign rd2 = (ra2 != 0) ? ((we3 && wa3 == ra2) ? wd3 : rf[ra2]) : 0;
 ```
 
 Why: an instruction **3 ahead** of a consumer writes back in WB on the same
 posedge at which the consumer's ID/EX register latches its operands. With a
-posedge write, the consumer captures the old value — e.g. `w0 addi $2` →
-`w3 or ...,$2` latches `x` (verified in simulation). Writing in the first half
-of the cycle (negedge) makes the value visible to the combinational read before
-the consumer's posedge. This is the classic "write first half, read second
-half" register file. Forwarding does not help here: the producer is already
-past MEM/WB when the consumer is in EX.
+plain posedge write, the consumer captures the old value — e.g. `w0 addi $2` →
+`w3 or ...,$2` latches `x` (verified in simulation). The bypass makes the read
+port return the in-flight write data during that same cycle, which is the
+hardware-friendly "write first half, read second half" register file (no mixed
+clock edges, no stalls). An equivalent alternative is writing the array on the
+negedge; the bypass keeps everything on posedge. Forwarding does not help here:
+the producer is already past MEM/WB when the consumer is in EX.
 
 ### 4.5 Checkpoint 3 — sections 5–6 (EX + EX/MEM)
 
@@ -365,4 +369,29 @@ Reminders:
 | Width mismatch warnings | 31- vs 32-bit literals or wrong pipe_reg WIDTH | use `32'b0`/`32'bx` and match the field width |
 | Sim hangs in testbench | no `memwrite` ever reaches `dmem` | `memwriteM` not exported/wired to `mips.memwrite` |
 | Branch takes the jump target | jump/ID has priority over branch/EX in `pcnextF` | branch first: `pcsrcE ? pcbranchE : (jump ? pctargetD : pcplus4F)` |
-| Consumer 3 instructions behind reads `x` | regfile writes on posedge; ID read latched before the write | write the regfile on **negedge** (write first half, read second half) |
+| Consumer 3 instructions behind reads `x` | regfile write not visible to a same-cycle ID read | add the write-through bypass (`we3 && wa3 == ra1 ? wd3 : rf[ra1]`) or write the array on negedge |
+
+---
+
+## 8. Appendix — Stage naming convention (F/D/E/M/W)
+
+The final code uses stage-explicit suffixes (a signal carries the suffix of the
+stage that consumes it: `instrD`, `rd1E`, `aluoutM`, `readdataW`). Key renames
+relative to the snippets in this guide:
+
+| Guide name | Code name |
+|---|---|
+| `branch`, `jump` inputs | `branchD`, `jumpD` |
+| `mem2reg, memwrite, alusrc, regdst, regwrite, alucontrol` | `*D` |
+| `instr` (datapath input) | `instrF` |
+| `readdata` (input) | `readdataM` |
+| `pc` (output) | `pcF` |
+| `aluout`, `writedata` (outputs) | `aluoutM`, `storeDataM` |
+| `pctargetD` | `pcjumpD` |
+| `srcAE`, `srcBE`, `srcBE_raw` | `aluSrcAE`, `aluSrcBE`, `rtFwdE` |
+| `writedataE/M` | `storeDataE/M` |
+| `writeregD/E/M/W` | `destD/E/M/W` |
+| `load_use` | `loadUseE` |
+| `forwardAE/BE` | `fwdAE/fwdBE` |
+
+Full mapping and the suffix rule: `pipeline-guide.md` §14.

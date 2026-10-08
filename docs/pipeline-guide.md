@@ -441,6 +441,47 @@ w12 sub:                              IF
 - Using `<=` in `always_comb` (see controller discussion) — use `=` there.
 - Assuming the `j` in the provided program can be ignored — it flushes a
   wrong-path instruction; without handling, the program executes `w16` too.
-- Regfile write race: a consumer 3 instructions behind its producer reads the
-  old value if the regfile writes on `posedge`. Write on `negedge` (first half),
-  read combinationally (second half) — see `pipeline-implementation.md` §4.4.
+- Regfile read race: a consumer 3 instructions behind its producer reads the
+  old value if the writeback isn't visible to the same-cycle ID read. Fix with a
+  write-through bypass on the read ports (`we3 && wa3 == ra1 ? wd3 : rf[ra1]`)
+  or a negedge write — see `pipeline-implementation.md` §4.4.
+
+---
+
+## 14. Appendix — Stage naming convention (F/D/E/M/W)
+
+Every stage-specific signal is suffixed with the stage that **consumes** it:
+
+| Suffix | Stage |
+|---|---|
+| `F` | IF (fetch) |
+| `D` | ID (decode) |
+| `E` | EX (execute) |
+| `M` | MEM (memory) |
+| `W` | WB (writeback) |
+
+Renames applied to `part1/rtl` (the code is the source of truth):
+
+| Old name | New name |
+|---|---|
+| `branch`, `jump` (datapath inputs) | `branchD`, `jumpD` |
+| `mem2reg`, `memwrite`, `alusrc`, `regdst`, `regwrite` | `mem2regD`, `memwriteD`, `alusrcD`, `regdstD`, `regwriteD` |
+| `alucontrol` | `alucontrolD` |
+| `readdata` (datapath input) | `readdataM` |
+| `pc` (datapath output) | `pcF` |
+| `aluout`, `writedata` (datapath outputs) | `aluoutM`, `storeDataM` |
+| `pctargetD` | `pcjumpD` |
+| `srcAE`, `srcBE`, `srcBE_raw` | `aluSrcAE`, `aluSrcBE`, `rtFwdE` |
+| `writedataE`, `writedataM` | `storeDataE`, `storeDataM` |
+| `writeregD/E/M/W` | `destD/E/M/W` |
+| `load_use` | `loadUseE` |
+| `forwardAE`, `forwardBE` | `fwdAE`, `fwdBE` |
+| `mips` nets `mem2reg`, `branch`, `alusrc`, `regdst`, `regwrite`, `jump`, `alucontrol` | `mem2regD`, `branchD`, `alusrcD`, `regdstD`, `regwriteD`, `jumpD`, `alucontrolD` |
+| `mips` ports `pc, instr, memwrite, aluout, writedata, readdata` | `pcF, instrF, memwriteM, aluoutM, storeDataM, readdataM` |
+
+Unchanged: pipeline-register instance names (`if_id_instr`, `id_ex_rt`, ...),
+`pcplus4F/D/E`, `pcnextF`, `pcbranchE`, `rd1D/E`, `rd2D/E`, `signimmD/E`,
+`rsE`, `rtE`, `zeroE`, `pcsrcE`, `aluoutE/M/W`, `readdataW`, `resultW`,
+`StallF/D`, `FlushD/E`, `validF..W`, and the helper-module port names from the
+book (`regfile`, `alu`, `mux2`, ...). `top`'s external ports
+(`writedata, dataadr, memwrite`) are fixed by the lab.

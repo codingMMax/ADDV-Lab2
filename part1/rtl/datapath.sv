@@ -1,151 +1,153 @@
 module datapath(
     input  logic        clk, reset,
-    input  logic        branch, jump,
-    input  logic        mem2reg, memwrite, alusrc, regdst, regwrite,
-    input  logic [2:0]  alucontrol,
-    input  logic [31:0] instrF, readdata,
-    output logic [31:0] pc, instrD,
-    output logic [31:0] aluout, writedata,
+    input  logic        branchD, jumpD,
+    input  logic        mem2regD, memwriteD, alusrcD, regdstD, regwriteD,
+    input  logic [2:0]  alucontrolD,
+    input  logic [31:0] instrF, readdataM,
+    output logic [31:0] pcF, instrD,
+    output logic [31:0] aluoutM, storeDataM,
     output logic        memwriteM
 );
     // =====================================================================
     // PIPELINED MIPS DATAPATH — stage map (keep this order)
-    // Reference: docs/pipeline-guide.md
+    // Naming: F = IF, D = ID, E = EX, M = MEM, W = WB
+    // Reference: docs/pipeline-guide.md (naming convention appendix)
     //
     //   1. FETCH (IF)              -> 2. IF/ID pipeline registers
     //   3. DECODE + REGISTER FILE  -> 4. ID/EX pipeline registers
     //   5. EXECUTE                 -> 6. EX/MEM pipeline registers
     //   7. MEMORY                  -> 8. MEM/WB pipeline registers
     //   9. WRITEBACK
-    //
-    // Planned interface changes (internal only; top/testbench unchanged):
-    //   inputs : branch (replaces pcsrc), instrF (freshly fetched instr), readdata
-    //   outputs: pc, instrD (ID-stage instr, decoded by controller in mips),
-    //            aluoutM, writedataM (MEM-stage address/store data to dmem)
     // =====================================================================
 
     // IF stage signals
-    logic [31:0] pcplus4F, pcnextF, pctargetD, pcplus4D;
+    logic [31:0] pcplus4F, pcnextF, pcjumpD, pcplus4D;
     // ID stage signals
     logic [31:0] rd1D, rd2D, signimmD;
-    logic [4:0] writeregD;
+    logic [4:0] destD;
 
     // ID --> EX
     logic regwriteE, mem2regE, memwriteE, alusrcE, branchE;
     logic [2:0] alucontrolE;
     logic [31:0] pcplus4E, rd1E, rd2E, signimmE;
-    logic [4:0] rsE, rtE, writeregE;
+    logic [4:0] rsE, rtE, destE;
 
-    //EX stage
-
-    logic [31:0] srcAE, srcBE, srcBE_raw, aluoutE, writedataE, pcbranchE;
+    // EX stage
+    logic [31:0] aluSrcAE, aluSrcBE, rtFwdE, aluoutE, storeDataE, pcbranchE;
     logic zeroE, pcsrcE;
 
-    // EX --> MEM
+    // EX --> MEM (aluoutM/storeDataM/memwriteM are output ports)
     logic regwriteM, mem2regM;
-    logic [31:0] aluoutM, writedataM;
-    logic [4:0] writeregM;
+    logic [4:0] destM;
 
-    //MEM --> WB
+    // MEM --> WB
     logic regwriteW, mem2regW;
     logic [31:0] readdataW, aluoutW;
-    logic [4:0]  writeregW;
+    logic [4:0]  destW;
 
     // WB
     logic [31:0] resultW;
-    // harzard control
-    logic   StallF, StallD, FlushD, FlushE;
+    // hazard control
+    logic StallF, StallD, FlushD, FlushE;
+    logic [1:0] fwdAE, fwdBE;
+    logic loadUseE;
     // valid chain (measurement only): pulses high in WB once per retired instruction
-    logic   validF, validD, validE, validM, validW;
+    logic validF, validD, validE, validM, validW;
 
 
     // =====================================================================
     // 1. FETCH (IF) — PC register, PC+4 adder, PC-next muxes
-    //    (pipeline: PC <- pcsrcE ? pcbranchE : pcplus4F; jump target from ID)
     // =====================================================================
-
-    assign pctargetD = {pcplus4D[31:28], instrD[25:0], 2'b00};
-    assign pcnextF = pcsrcE ? pcbranchE : (jump ? pctargetD: pcplus4F);
-    pipe_reg #(32) pcreg(clk, reset, ~StallF, 1'b0, pcnextF, pc);
-    adder pcadd1(pc, 32'b100, pcplus4F);
+    assign pcjumpD = {pcplus4D[31:28], instrD[25:0], 2'b00};
+    assign pcnextF = pcsrcE ? pcbranchE : (jumpD ? pcjumpD : pcplus4F);
+    pipe_reg #(32) pcreg(clk, reset, ~StallF, 1'b0, pcnextF, pcF);
+    adder pcadd1(pcF, 32'b100, pcplus4F);
 
     // =====================================================================
     // 2. IF/ID PIPELINE REGISTERS
     // =====================================================================
     pipe_reg #(32) if_id_pcplus4(clk, reset, ~StallD, FlushD, pcplus4F, pcplus4D);
-    pipe_reg #(32) if_id_instr(clk, reset, ~StallD, FlushD, instrF, instrD);
+    pipe_reg #(32) if_id_instr  (clk, reset, ~StallD, FlushD, instrF,   instrD);
+
     // =====================================================================
     // 3. DECODE + REGISTER FILE (ID) — controller (in mips) decodes instrD,
-    //    regfile read, signext, writereg mux, jump target
+    //    regfile read, signext, dest mux, jump target
     // =====================================================================
-    // register file logic
-    regfile rf(clk, regwriteW, instrD[25:21], instrD[20:16], writeregW, resultW, rd1D, rd2D);
-    mux2 #(5) wrmux(instrD[20:16], instrD[15:11], regdst, writeregD);
-    signext se(instrD[15:0], signimmD); 
-    
+    regfile rf(clk, regwriteW, instrD[25:21], instrD[20:16], destW, resultW, rd1D, rd2D);
+    mux2 #(5) wrmux(instrD[20:16], instrD[15:11], regdstD, destD);
+    signext se(instrD[15:0], signimmD);
+
     // =====================================================================
     // 4. ID/EX PIPELINE REGISTERS
-    //    TODO: controls (regwrite, mem2reg, memwrite, alusrc, branch, alucontrol),
-    //          pcplus4E, rd1E, rd2E, signimmE, rsE, rtE, writeregE
     // =====================================================================
-    pipe_reg #(1)  id_ex_regwrite (clk, reset, 1'b1, FlushE, regwrite,      regwriteE);
-    pipe_reg #(1)  id_ex_mem2reg  (clk, reset, 1'b1, FlushE, mem2reg,       mem2regE);
-    pipe_reg #(1)  id_ex_memwrite (clk, reset, 1'b1, FlushE, memwrite,      memwriteE);
-    pipe_reg #(1)  id_ex_alusrc   (clk, reset, 1'b1, FlushE, alusrc,        alusrcE);
-    pipe_reg #(1)  id_ex_branch   (clk, reset, 1'b1, FlushE, branch,        branchE);
-    pipe_reg #(3)  id_ex_aluctrl  (clk, reset, 1'b1, FlushE, alucontrol,    alucontrolE);
-    pipe_reg #(32) id_ex_pcplus4  (clk, reset, 1'b1, FlushE, pcplus4D,      pcplus4E);
-    pipe_reg #(32) id_ex_rd1      (clk, reset, 1'b1, FlushE, rd1D,          rd1E);
-    pipe_reg #(32) id_ex_rd2      (clk, reset, 1'b1, FlushE, rd2D,          rd2E);
-    pipe_reg #(32) id_ex_signimm  (clk, reset, 1'b1, FlushE, signimmD,      signimmE);
-    pipe_reg #(5)  id_ex_rs       (clk, reset, 1'b1, FlushE, instrD[25:21], rsE);
-    pipe_reg #(5)  id_ex_rt       (clk, reset, 1'b1, FlushE, instrD[20:16], rtE);
-    pipe_reg #(5)  id_ex_writereg (clk, reset, 1'b1, FlushE, writeregD,     writeregE);
-    // =====================================================================
-    // 5. EXECUTE (EX) — forward muxes (Step 3), ALU, zero,
-    //    pcbranch adder, pcsrcE = branchE & zeroE
-    // =====================================================================
-    // ALU logic
-    // assign srcAE = rd1E;
-    // assign srcBE_raw = rd2E;
+    pipe_reg #(1)  id_ex_regwrite (clk, reset, 1'b1, FlushE, regwriteD,      regwriteE);
+    pipe_reg #(1)  id_ex_mem2reg  (clk, reset, 1'b1, FlushE, mem2regD,       mem2regE);
+    pipe_reg #(1)  id_ex_memwrite (clk, reset, 1'b1, FlushE, memwriteD,      memwriteE);
+    pipe_reg #(1)  id_ex_alusrc   (clk, reset, 1'b1, FlushE, alusrcD,        alusrcE);
+    pipe_reg #(1)  id_ex_branch   (clk, reset, 1'b1, FlushE, branchD,        branchE);
+    pipe_reg #(3)  id_ex_aluctrl  (clk, reset, 1'b1, FlushE, alucontrolD,    alucontrolE);
+    pipe_reg #(32) id_ex_pcplus4  (clk, reset, 1'b1, FlushE, pcplus4D,       pcplus4E);
+    pipe_reg #(32) id_ex_rd1      (clk, reset, 1'b1, FlushE, rd1D,           rd1E);
+    pipe_reg #(32) id_ex_rd2      (clk, reset, 1'b1, FlushE, rd2D,           rd2E);
+    pipe_reg #(32) id_ex_signimm  (clk, reset, 1'b1, FlushE, signimmD,       signimmE);
+    pipe_reg #(5)  id_ex_rs       (clk, reset, 1'b1, FlushE, instrD[25:21],  rsE);
+    pipe_reg #(5)  id_ex_rt       (clk, reset, 1'b1, FlushE, instrD[20:16],  rtE);
+    pipe_reg #(5)  id_ex_dest     (clk, reset, 1'b1, FlushE, destD,          destE);
 
-    mux2 #(32) srcbmux(srcBE_raw, signimmE, alusrcE, srcBE);
-    alu alu0(srcAE, srcBE, alucontrolE, aluoutE, zeroE);
+    // =====================================================================
+    // 5. EXECUTE (EX) — forward muxes, ALU, zero, branch target,
+    //    pcsrcE = branchE & zeroE
+    // =====================================================================
+    always_comb begin
+        fwdAE = 2'b00;
+        if      (regwriteM && destM != 0 && destM == rsE) fwdAE = 2'b10;
+        else if (regwriteW && destW != 0 && destW == rsE) fwdAE = 2'b01;
+    end
+    always_comb begin
+        fwdBE = 2'b00;
+        if      (regwriteM && destM != 0 && destM == rtE) fwdBE = 2'b10;
+        else if (regwriteW && destW != 0 && destW == rtE) fwdBE = 2'b01;
+    end
+
+    assign aluSrcAE = (fwdAE == 2'b10) ? aluoutM :
+                      (fwdAE == 2'b01) ? resultW : rd1E;
+    assign rtFwdE   = (fwdBE == 2'b10) ? aluoutM :
+                      (fwdBE == 2'b01) ? resultW : rd2E;
+
+    mux2 #(32) srcbmux(rtFwdE, signimmE, alusrcE, aluSrcBE);
+    alu alu0(aluSrcAE, aluSrcBE, alucontrolE, aluoutE, zeroE);
 
     adder pcadd2(pcplus4E, {signimmE[29:0], 2'b00}, pcbranchE);
     assign pcsrcE = branchE & zeroE;
-    assign writedataE = srcBE_raw;
+
+    assign storeDataE = rtFwdE;   // forwarded rt is the store data
 
     // =====================================================================
     // 6. EX/MEM PIPELINE REGISTERS
-    //    TODO: controls (regwrite, mem2reg, memwrite),
-    //          aluoutM, writedataM (forwarded rd2 for sw), writeregM
     // =====================================================================
     pipe_reg #(1)  ex_mem_regwrite (clk, reset, 1'b1, 1'b0, regwriteE,  regwriteM);
     pipe_reg #(1)  ex_mem_mem2reg  (clk, reset, 1'b1, 1'b0, mem2regE,   mem2regM);
     pipe_reg #(1)  ex_mem_memwrite (clk, reset, 1'b1, 1'b0, memwriteE,  memwriteM);
     pipe_reg #(32) ex_mem_aluout   (clk, reset, 1'b1, 1'b0, aluoutE,    aluoutM);
-    pipe_reg #(32) ex_mem_writedata(clk, reset, 1'b1, 1'b0, writedataE, writedataM);
-    pipe_reg #(5)  ex_mem_writereg (clk, reset, 1'b1, 1'b0, writeregE,  writeregM);
-
+    pipe_reg #(32) ex_mem_storedata(clk, reset, 1'b1, 1'b0, storeDataE, storeDataM);
+    pipe_reg #(5)  ex_mem_dest     (clk, reset, 1'b1, 1'b0, destE,      destM);
 
     // =====================================================================
-    // 7. MEMORY LOGIC (MEM) — address = aluoutM, store data = writedataM
-    //    (dmem itself stays in top.sv)
+    // 7. MEMORY (MEM) — aluoutM = address, storeDataM = store data
+    //    (dmem itself stays in top.sv; the ports above drive it)
     // =====================================================================
-    assign aluout = aluoutM;
-    assign writedata = writedataM;
+
     // =====================================================================
     // 8. MEM/WB PIPELINE REGISTERS
-    //    TODO: regwriteW, mem2regW, readdataW, aluoutW, writeregW
     // =====================================================================
     pipe_reg #(1)  mem_wb_regwrite(clk, reset, 1'b1, 1'b0, regwriteM,  regwriteW);
     pipe_reg #(1)  mem_wb_mem2reg (clk, reset, 1'b1, 1'b0, mem2regM,   mem2regW);
-    pipe_reg #(32) mem_wb_readdata(clk, reset, 1'b1, 1'b0, readdata,   readdataW);
+    pipe_reg #(32) mem_wb_readdata(clk, reset, 1'b1, 1'b0, readdataM,  readdataW);
     pipe_reg #(32) mem_wb_aluout  (clk, reset, 1'b1, 1'b0, aluoutM,    aluoutW);
-    pipe_reg #(5)  mem_wb_writereg(clk, reset, 1'b1, 1'b0, writeregM,  writeregW);
+    pipe_reg #(5)  mem_wb_dest    (clk, reset, 1'b1, 1'b0, destM,      destW);
+
     // =====================================================================
-    // 9. WRITEBACK (WB) — result_w mux drives the regfile write port (section 3)
+    // 9. WRITEBACK (WB) — resultW drives the regfile write port (section 3)
     // =====================================================================
     assign resultW = mem2regW ? readdataW : aluoutW;
 
@@ -158,35 +160,15 @@ module datapath(
     pipe_reg #(1) ex_mem_valid (clk, reset, 1'b1,    1'b0,   validE, validM);
     pipe_reg #(1) mem_wb_valid (clk, reset, 1'b1,    1'b0,   validM, validW);
 
-    //harzard logic
-    logic [1:0] forwardAE;
-    logic [1:0] forwardBE;
-    logic load_use;
-
-    always_comb begin
-        forwardAE = 2'b00;
-        if (regwriteM && writeregM != 0 && writeregM == rsE) forwardAE = 2'b10;
-        else if (regwriteW && writeregW != 0 && writeregW == rsE) forwardAE = 2'b01;
-    end
-
-    always_comb begin
-        forwardBE =  2'b00;
-        if (regwriteM && writeregM != 0 && writeregM == rtE) forwardBE = 2'b10;
-        else if(regwriteW && writeregW != 0 && writeregW == rtE) forwardBE = 2'b01;
-    end
-
-    assign srcAE = (forwardAE == 2'b10) ? aluoutM :
-                       (forwardAE == 2'b01) ? resultW  : rd1E;
-    assign srcBE_raw = (forwardBE == 2'b10) ? aluoutM :
-                       (forwardBE == 2'b01) ? resultW  : rd2E;
-
-    // load-use stall + flush
-    assign load_use = mem2regE && (writeregE != 0) &&
-                      ((writeregE == instrD[25:21]) || (writeregE == instrD[20:16]));
-    assign StallF = load_use;
-    assign StallD = load_use;
-    assign FlushE = pcsrcE | load_use;
-    assign FlushD = pcsrcE | jump;
+    // =====================================================================
+    // Hazard logic: load-use stall + control-hazard flush
+    // =====================================================================
+    assign loadUseE = mem2regE && (destE != 0) &&
+                      ((destE == instrD[25:21]) || (destE == instrD[20:16]));
+    assign StallF = loadUseE;
+    assign StallD = loadUseE;
+    assign FlushE = pcsrcE | loadUseE;
+    assign FlushD = pcsrcE | jumpD;
 endmodule
 
 

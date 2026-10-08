@@ -12,45 +12,45 @@ module top (
     output [31:0] writedata, dataadr,
     output memwrite
 );
-    logic [31:0] pc, instr, readdata;
+    logic [31:0] pcF, instrF, readdataM;
 
     // instantiate processor and memories
-    mips mips (clk, reset, pc, instr, memwrite, dataadr, writedata, readdata);
-    imem imem (pc[7:2], instr);
-    dmem dmem (clk, memwrite, dataadr, writedata, readdata);
+    mips mips (clk, reset, pcF, instrF, memwrite, dataadr, writedata, readdataM);
+    imem imem (pcF[7:2], instrF);
+    dmem dmem (clk, memwrite, dataadr, writedata, readdataM);
 endmodule
 
 
 //////////////////////////////////////////////////////////////////////
-// Single-cycle MIPS Processor Module (pipelined internals)
+// MIPS Processor Module (pipelined internals)
 //////////////////////////////////////////////////////////////////////
 module mips (
     input clk, reset,
-    output [31:0] pc,
-    input [31:0] instr,
-    output memwrite,
-    output [31:0] aluout, writedata,
-    input [31:0] readdata
+    output [31:0] pcF,
+    input [31:0] instrF,
+    output memwriteM,
+    output [31:0] aluoutM, storeDataM,
+    input [31:0] readdataM
 );
-    logic mem2reg, memwriteD, branch, alusrc, regdst, regwrite, jump;
-    logic [2:0] alucontrol;
+    logic mem2regD, memwriteD, branchD, alusrcD, regdstD, regwriteD, jumpD;
+    logic [2:0] alucontrolD;
     logic [31:0] instrD;
 
     controller c(
         .op(instrD[31:26]), .funct(instrD[5:0]),
-        .mem2reg(mem2reg), .memwrite(memwriteD), .branch(branch),
-        .alusrc(alusrc), .regdst(regdst), .regwrite(regwrite),
-        .jump(jump), .alucontrol(alucontrol)
+        .mem2reg(mem2regD), .memwrite(memwriteD), .branch(branchD),
+        .alusrc(alusrcD), .regdst(regdstD), .regwrite(regwriteD),
+        .jump(jumpD), .alucontrol(alucontrolD)
     );
 
     datapath dp(
         .clk(clk), .reset(reset),
-        .branch(branch), .jump(jump),
-        .mem2reg(mem2reg), .memwrite(memwriteD), .alusrc(alusrc),
-        .regdst(regdst), .regwrite(regwrite), .alucontrol(alucontrol),
-        .instrF(instr), .readdata(readdata),
-        .pc(pc), .instrD(instrD),
-        .aluout(aluout), .writedata(writedata), .memwriteM(memwrite)
+        .branchD(branchD), .jumpD(jumpD),
+        .mem2regD(mem2regD), .memwriteD(memwriteD), .alusrcD(alusrcD),
+        .regdstD(regdstD), .regwriteD(regwriteD), .alucontrolD(alucontrolD),
+        .instrF(instrF), .readdataM(readdataM),
+        .pcF(pcF), .instrD(instrD),
+        .aluoutM(aluoutM), .storeDataM(storeDataM), .memwriteM(memwriteM)
     );
 endmodule
 
