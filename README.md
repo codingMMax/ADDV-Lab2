@@ -214,16 +214,18 @@ every checkpoint. Do **not** mix syntax churn (Step 1) with architecture changes
 - [ ] Add a flushing test program (a chain of `BEQ`s); verify flushing works.
 
 **Step 5 — Synthesis**
-- [ ] Write `part1/synth/compile_dc.tcl` (`gscl45nm`, `analyze -sverilog`,
-      reports); synthesize the non-pipelined reference (`reference/`) and the
-      pipelined design (`part1/`); read the timing reports (critical path,
-      clock period).
-- [ ] SRAM experiment: copy `compile_with_sram.tcl` from
-      `/usr/local2/COURSES/ADDV/LAB2/` on Apporto (it is not in the starter zip),
-      swap in `top_with_sram`, synthesize, and note the lines in that script that
-      add the memory-cell library (`SRAM_32x64_1rw.db`).
-- [ ] Add `set_dont_touch [get_cells "imem"]` / `set_dont_touch [get_cells "dmem"]`
-      so the memories are not optimized away.
+- [x] `part1/synth/compile_dc.tcl` (`gscl45nm`, `analyze -format sverilog`,
+      reports); synthesize the non-pipelined reference and the pipelined design.
+      Run with `make synth-ref` / `make synth-part1` (reports land in
+      `reference/synth/`, `part1/synth/`; `make synth-clean` removes them).
+- [x] SRAM experiment: `part1/rtl/top_with_sram.sv` + `compile_with_sram.tcl`
+      (equivalent of the course script, which is not in the starter zip — copy
+      the official one from `/usr/local2/COURSES/ADDV/LAB2/` on Apporto to cite
+      its exact memory-library lines in the report). Run with
+      `make synth-ref-sram` / `make synth-part1-sram`.
+- [x] `set_dont_touch [get_cells "imem"]` / `[get_cells "dmem"]` keeps the
+      memories from being optimized away.
+- [x] Results and the performance table are filled in `report-part1.md` §6–7.
 
 **Step 6 — Report + submission**
 - [ ] Microarchitecture diagram of the pipeline with the **critical path

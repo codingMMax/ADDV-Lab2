@@ -27,7 +27,18 @@ elif [ -d /home/tools/synopsys ]; then
     VCS_HOME=${VCS_HOME%/}
     VERDI_HOME=${VERDI_HOME%/}
     SYN_HOME=${SYN_HOME%/}
-    export PDK_DIR="${PDK_DIR:-/mnt/vault0/PDKs/OSU_FreePDK/OSU_FreePDK_stdcells/osu_freepdk_1.0}"
+    # The synthesis scripts expect $PDK_DIR/osu_soc/lib/files/gscl45nm.db.
+    # Build a stable symlink farm with that layout for the local FreePDK.
+    _FREEPDK_FILES=/mnt/vault0/PDKs/OSU_FreePDK/OSU_FreePDK_stdcells/osu_freepdk_1.0/lib/files
+    _PDK_LINK_DIR="${HOME}/.cache/addv/pdk"
+    if [ -d "$_FREEPDK_FILES" ]; then
+        mkdir -p "$_PDK_LINK_DIR/osu_soc/lib"
+        ln -sfn "$_FREEPDK_FILES" "$_PDK_LINK_DIR/osu_soc/lib/files"
+        export PDK_DIR="$_PDK_LINK_DIR"
+    else
+        export PDK_DIR="${PDK_DIR:-/mnt/vault0/PDKs/OSU_FreePDK/OSU_FreePDK_stdcells/osu_freepdk_1.0}"
+    fi
+    unset _FREEPDK_FILES _PDK_LINK_DIR
 else
     echo "setup.sh: error: no Synopsys installation found (looked in /usr/local2 and /home/tools)." >&2
     return 1 2>/dev/null || exit 1
