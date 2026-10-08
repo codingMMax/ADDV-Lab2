@@ -15,25 +15,35 @@ module top(
 
 endmodule
 
+
 module mips(
     input clk, reset,
     output [31:0] pc,
     input [31:0] instr,
-    output      memwrite,
+    output memwrite,
     output [31:0] aluout, writedata,
     input [31:0] readdata
-
 );
-
-    logic mem2reg, pcsrc, alusrc, regdst, regwrite, jump, zero;
+    logic mem2reg, memwriteD, branch, alusrc, regdst, regwrite, jump;
     logic [2:0] alucontrol;
+    logic [31:0] instrD;
 
-    controller controller(instr[31:26], instr[5:0], zero, mem2reg, 
-                memwrite, pcsrc, alusrc, regdst, regwrite, jump, alucontrol);
+    controller c(
+        .op(instrD[31:26]), .funct(instrD[5:0]),
+        .mem2reg(mem2reg), .memwrite(memwriteD), .branch(branch),
+        .alusrc(alusrc), .regdst(regdst), .regwrite(regwrite),
+        .jump(jump), .alucontrol(alucontrol)
+    );
 
-    datapath dp(clk, reset, mem2reg, pcsrc, alusrc, regdst, regwrite, jump, 
-                alucontrol, zero, pc, instr, aluout, writedata, readdata);
-
+    datapath dp(
+        .clk(clk), .reset(reset),
+        .branch(branch), .jump(jump),
+        .mem2reg(mem2reg), .memwrite(memwriteD), .alusrc(alusrc),
+        .regdst(regdst), .regwrite(regwrite), .alucontrol(alucontrol),
+        .instrF(instr), .readdata(readdata),
+        .pc(pc), .instrD(instrD),
+        .aluout(aluout), .writedata(writedata), .memwriteM(memwrite)
+    );
 endmodule
 
 

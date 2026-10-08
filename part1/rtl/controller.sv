@@ -1,19 +1,19 @@
+// TODO(pipeline): drop the `zero` input and `pcsrc` output; expose `branch`
+//                 instead (pcsrcE = branchE & zeroE is computed in the EX stage).
+//                 mips decodes the datapath's `instrD` output (ID-stage instr).
 module controller(
     input [5:0] op, funct,
-    input zero,
     output mem2reg, memwrite,
-    output pcsrc, alusrc,
+    output branch, alusrc,
     output regdst, regwrite,
     output jump,
     output [2:0] alucontrol
 );
 
     logic [1:0] aluop;
-    logic branch;
     maindec md (op, mem2reg, memwrite, branch, alusrc, regdst, regwrite, jump, aluop);
     aludec ad (funct, aluop, alucontrol);
     
-    assign pcsrc = branch & zero;
 endmodule
 
 
